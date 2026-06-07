@@ -1,0 +1,11 @@
+/tripflare
+/tripflare.db
+/certs/
+/geoip/
+deploy.sh
+config.yaml
+
+# Local Claude memory (operator env), legal scratch, AI planning notes — never publish
+CLAUDE.local.md
+*.tmp
+/ai/tasks/

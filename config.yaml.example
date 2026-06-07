@@ -1,0 +1,39 @@
+# Tripflare configuration
+# Copy this file to config.yaml and edit to match your setup.
+
+domain: "tracker.example.com"
+external_ip: "203.0.113.1"    # Your server's public IP
+nameservers:
+  - "ns1.example.com"
+  - "ns2.example.com"
+log_format: "text"             # "text" (human-readable) or "json"
+
+listen:
+  dns: ":53"
+  http: ":80"
+  https: ":443"
+
+sqlite_path: "./tripflare.db"
+cert_path: "./certs"
+
+acme:
+  enabled: false               # Enable after DNS delegation is verified
+  email: "you@example.com"
+  staging: true                # Use Let's Encrypt staging first, switch to false for production
+
+auth:
+  # At least one entry required. Generate a bcrypt hash:
+  #   htpasswd -nbBC 10 "" "your-password" | cut -d: -f2
+  - username: "admin"
+    password_hash: "$2y$10$REPLACE_WITH_BCRYPT_HASH"
+
+# Optional: GeoIP enrichment (country, ASN, org).
+# Download DB-IP Lite (https://db-ip.com/db/lite.php) or MaxMind GeoLite2,
+# place *country*.mmdb and *asn*.mmdb files in this directory.
+geoip_path: "./geoip"
+
+limits:
+  max_events_per_slug: 500           # Ring buffer — oldest events evicted when full
+  slug_ttl: "48h"                    # Auto-expire slugs after this duration
+  flush_interval: "30s"              # How often in-memory data is flushed to SQLite
+  max_hits_per_slug_per_minute: 60   # Rate limit per IP:slug pair

@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tripflare</title>
+  <link rel="stylesheet" href="/tripflare/style.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { h, render, Component } from 'https://esm.sh/preact@10.19.3';
+    import htm from 'https://esm.sh/htm@3.1.1';
+
+    const html = htm.bind(h);
+
+    function formatTime(iso) {
+      const d = new Date(iso);
+      return d.toLocaleTimeString('en-GB', { hour12: false }) + '.' +
+        String(d.getMilliseconds()).padStart(3, '0');
+    }
+
+    function timeLeft(expiresAt) {
+      const ms = new Date(expiresAt) - Date.now();
+      if (ms <= 0) return 'expired';
+      const h = Math.floor(ms / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      if (h > 0) return h + 'h ' + m + 'm remaining';
+      return m + 'm remaining';
+    }
+
+    function eventDetail(ev) {
+      try {
+        const d = ev.data;
+        if (ev.type === 'dns') {
+          return html`<div class="detail-grid">
+            <span class="detail-key">type</span><span>${d.query_type || ''}</span>
+            <span class="detail-key">name</span><span>${d.query_name || ''}</span>
+            ${d.client_subnet ? html`<span class="detail-key">subnet</span><span>${d.client_subnet}</span>` : ''}
+          </div>`;
+        }
+        if (ev.type === 'http' || ev.type === 'https') {
+          let uri = d.path || '';
+          if (d.query) uri += '?' + d.query;
+          const headers = d.headers || {};
+          const headerKeys = Object.keys(headers).filter(k => headers[k]);
+          return html`<div class="detail-grid">
+            <span class="detail-key">method</span><span>${d.method || ''}</span>
+            <span class="detail-key">URI</span><span class="detail-wrap">${uri}</span>
+            ${d.user_agent ? html`<span class="detail-key">UA</span><span class="detail-wrap">${d.user_agent}</span>` : ''}
+            ${headerKeys.map(k => html`
+              <span class="detail-key">${k}</span><span class="detail-wrap">${headers[k]}</span>
+            `)}
+          </div>`;
+        }
+        return JSON.stringify(d);
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function copyToClipboard(text, btn) {
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = 'ok';
+        setTimeout(() => { btn.textContent = orig; }, 1200);
+      });
+    }
+
+    class App extends Component {
+      constructor() {
+        super();
+        const slug = (location.hash || '').replace(/^#\/?/, '');
+        this.state = {
+          slug: slug || null,
+          domain: null,
+          expiresAt: null,
+          events: [],
+          status: 'idle',
+          error: null,
+          creating: false,
+          newestFirst: true,
+          slugList: [],
+          loadingList: false,
+        };
+        this.eventSource = null;
+        this.expiryTimer = null;
+        this.listTimer = null;
+      }
+
+      componentDidMount() {
+        window.addEventListener('hashchange', () => {
+          const slug = (location.hash || '').replace(/^#\/?/, '');
+          if (slug && slug !== this.state.slug) {
+            this.loadSlug(slug);
+          } else if (!slug) {
+            this.cleanup();
+            this.setState({ slug: null, events: [], status: 'idle', error: null });
+            this.fetchSlugList();
+            this.startListTimer();
+          }
+        });
+
+        if (this.state.slug) {
+          this.loadSlug(this.state.slug);
+        } else {
+          this.fetchSlugList();
+          this.startListTimer();
+        }
+      }
+
+      componentWillUnmount() {
+        this.cleanup();
+      }
+
+      cleanup() {
+        if (this.eventSource) {
+          this.eventSource.close();
+          this.eventSource = null;
+        }
+        if (this.expiryTimer) {
+          clearInterval(this.expiryTimer);
+          this.expiryTimer = null;
+        }
+        this.stopListTimer();
+      }
+
+      async fetchSlugList() {
+        this.setState({ loadingList: true });
+        try {
+          const res = await fetch('/api/slugs');
+          if (!res.ok) throw new Error('failed to load slugs');
+          const data = await res.json();
+          this.setState({ slugList: data, loadingList: false });
+        } catch (err) {
+          this.setState({ error: err.message, loadingList: false });
+        }
+      }
+
+      startListTimer() {
+        this.stopListTimer();
+        this.listTimer = setInterval(() => this.fetchSlugList(), 30000);
+      }
+
+      stopListTimer() {
+        if (this.listTimer) {
+          clearInterval(this.listTimer);
+          this.listTimer = null;
+        }
+      }
+
+      async createSlug() {
+        this.setState({ creating: true, error: null });
+        try {
+          const res = await fetch('/api/slugs', { method: 'POST' });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || 'request failed');
+          }
+          const data = await res.json();
+          this.stopListTimer();
+          this.setState({
+            slug: data.slug,
+            domain: data.domain,
+            expiresAt: data.expires_at,
+            events: [],
+            creating: false,
+          }, () => {
+            location.hash = '#/' + data.slug;
+          });
+          this.connectSSE(data.slug);
+          this.startExpiryTimer();
+        } catch (err) {
+          this.setState({ error: err.message, creating: false });
+        }
+      }
+
+      async loadSlug(slugID) {
+        this.cleanup();
+        this.setState({ slug: slugID, events: [], status: 'loading', error: null });
+        try {
+          const res = await fetch('/api/slugs/' + slugID);
+          if (!res.ok) {
+            if (res.status === 404) {
+              this.setState({ error: 'slug not found', status: 'idle' });
+              return;
+            }
+            throw new Error('failed to load slug');
+          }
+          const data = await res.json();
+          this.setState({
+            domain: data.domain,
+            expiresAt: data.expires_at,
+            status: 'idle',
+          });
+          this.connectSSE(slugID);
+          this.startExpiryTimer();
+        } catch (err) {
+          this.setState({ error: err.message, status: 'idle' });
+        }
+      }
+
+      connectSSE(slugID) {
+        this.setState({ status: 'connected' });
+        const es = new EventSource('/api/slugs/' + slugID + '/events');
+
+        es.onmessage = (e) => {
+          try {
+            const ev = JSON.parse(e.data);
+            this.setState(s => ({ events: [...s.events, ev] }));
+          } catch (_) {}
+        };
+
+        es.addEventListener('close', () => {
+          es.close();
+          this.setState({ status: 'closed' });
+        });
+
+        es.onerror = () => {
+          if (es.readyState === EventSource.CONNECTING) {
+            this.setState({ status: 'reconnecting' });
+          } else {
+            this.setState({ status: 'disconnected' });
+          }
+        };
+
+        es.onopen = () => {
+          this.setState({ status: 'connected' });
+        };
+
+        this.eventSource = es;
+      }
+
+      async deleteSlug() {
+        const { slug } = this.state;
+        if (!slug) return;
+        if (!confirm('Delete this tracker? This cannot be undone.')) return;
+        try {
+          const res = await fetch('/api/slugs/' + slug, { method: 'DELETE' });
+          if (res.ok) {
+            this.cleanup();
+            location.hash = '/';
+          }
+        } catch (_) {}
+      }
+
+      async clearEvents() {
+        const { slug } = this.state;
+        if (!slug) return;
+        try {
+          await fetch('/api/slugs/' + slug + '/events', { method: 'DELETE' });
+          this.setState({ events: [] });
+        } catch (_) {}
+      }
+
+      startExpiryTimer() {
+        this.expiryTimer = setInterval(() => {
+          this.setState({ _tick: Date.now() });
+        }, 10000);
+      }
+
+      render() {
+        const { slug, domain, expiresAt, events, status, error, creating, newestFirst } = this.state;
+        const sortedEvents = newestFirst ? [...events].reverse() : events;
+
+        if (!slug) {
+          const { slugList, loadingList } = this.state;
+          return html`
+            <header>
+              <h1>Tripflare</h1>
+              <p>DNS + HTTPS tracking for security research</p>
+            </header>
+            <div class="dashboard">
+              <div class="dashboard-header">
+                <button class="primary" disabled=${creating} onClick=${() => this.createSlug()}>
+                  ${creating ? 'Creating...' : 'Create tracker'}
+                </button>
+              </div>
+              ${error && html`<div class="error-msg">${error}</div>`}
+              ${loadingList && slugList.length === 0
+                ? html`<div class="empty-state">Loading...</div>`
+                : slugList.length === 0
+                  ? html`<div class="empty-state">No active trackers. Create one to get started.</div>`
+                  : html`
+                    <table class="slug-table">
+                      <thead>
+                        <tr>
+                          <th>Slug</th>
+                          <th>Created</th>
+                          <th>Time remaining</th>
+                          <th>Events</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${slugList.map(s => html`
+                          <tr key=${s.slug} class="slug-row" onClick=${() => { location.hash = '#/' + s.slug; }}>
+                            <td><span class="slug-id">${s.slug}</span></td>
+                            <td>${formatTime(s.created_at)}</td>
+                            <td>${timeLeft(s.expires_at)}</td>
+                            <td>${s.event_count}</td>
+                          </tr>
+                        `)}
+                      </tbody>
+                    </table>
+                  `
+              }
+            </div>
+          `;
+        }
+
+        const trackUrl = 'https://' + slug + '.' + (domain || location.hostname);
+        const pixelUrl = trackUrl + '/img.png';
+
+        return html`
+          <header>
+            <h1>Tripflare</h1>
+            <p><a href="#" style="color: var(--text-muted); text-decoration: none;"
+              onClick=${(e) => { e.preventDefault(); location.hash = ''; }}>${'← back'}</a></p>
+          </header>
+
+          <div class="slug-info">
+            <div class="slug-header">
+              <span class="slug-id">${slug}</span>
+              ${expiresAt && html`<span class="expires">${timeLeft(expiresAt)}</span>`}
+            </div>
+
+            <div class="urls">
+              <div class="url-row">
+                <span class="url-label">Track</span>
+                <span class="url-value">${trackUrl}/any/path</span>
+                <button class="copy-btn" onClick=${(e) => copyToClipboard(trackUrl + '/any/path', e.target)}>copy</button>
+              </div>
+              <div class="url-row">
+                <span class="url-label">Pixel</span>
+                <span class="url-value">${pixelUrl}</span>
+                <button class="copy-btn" onClick=${(e) => copyToClipboard(pixelUrl, e.target)}>copy</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="status-bar">
+            <span class="status-dot ${status === 'connected' ? 'connected' : status === 'reconnecting' ? 'reconnecting' : ''}"></span>
+            <span>${status === 'connected' ? 'Live' : status === 'reconnecting' ? 'Reconnecting...' : status === 'closed' ? 'Slug expired' : status}</span>
+          </div>
+
+          ${error && html`<div class="error-msg">${error}</div>`}
+
+          <div class="events-toolbar">
+            ${events.length > 0 && html`
+              <button class="copy-btn" onClick=${() => this.setState({ newestFirst: !newestFirst })}>
+                ${newestFirst ? '↓ newest first' : '↑ oldest first'}
+              </button>
+              <button class="copy-btn" onClick=${() => this.clearEvents()}>
+                clear
+              </button>
+            `}
+            <button class="copy-btn danger-btn" onClick=${() => this.deleteSlug()}>
+              delete
+            </button>
+          </div>
+
+          <div class="table-wrapper">
+            ${events.length === 0
+              ? html`<div class="onboarding">
+                  <p class="onboarding-title">Waiting for events...</p>
+                  <p class="onboarding-hint">Try one of these to trigger a capture:</p>
+                  <div class="onboarding-cmds">
+                    <div class="onboarding-cmd">
+                      <span class="onboarding-label">HTTP request</span>
+                      <code>curl https://${slug}.${domain || location.hostname}/any/path?payload=test</code>
+                      <button class="copy-btn" onClick=${(e) => copyToClipboard('curl https://' + slug + '.' + (domain || location.hostname) + '/any/path?payload=test', e.target)}>copy</button>
+                    </div>
+                    <div class="onboarding-cmd">
+                      <span class="onboarding-label">DNS lookup</span>
+                      <code>dig ${slug}.${domain || location.hostname}</code>
+                      <button class="copy-btn" onClick=${(e) => copyToClipboard('dig ' + slug + '.' + (domain || location.hostname), e.target)}>copy</button>
+                    </div>
+                    <div class="onboarding-cmd">
+                      <span class="onboarding-label">Tracking pixel</span>
+                      <code>${'<img src="https://' + slug + '.' + (domain || location.hostname) + '/img.png" width="1" height="1">'}</code>
+                      <button class="copy-btn" onClick=${(e) => copyToClipboard('<img src="https://' + slug + '.' + (domain || location.hostname) + '/img.png" width="1" height="1">', e.target)}>copy</button>
+                    </div>
+                  </div>
+                </div>`
+              : html`
+                <table class="events-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Type</th>
+                      <th>Source IP</th>
+                      <th>Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${sortedEvents.map(ev => html`
+                      <tr key=${ev.timestamp + ev.source_ip + ev.type}>
+                        <td>${formatTime(ev.timestamp)}</td>
+                        <td><span class="event-type ${ev.type}">${ev.type}</span></td>
+                        <td>
+                          <div>${ev.country_flag ? html`<span title=${ev.country_code}>${ev.country_flag}</span> ` : ''}${ev.source_ip}</div>
+                          ${ev.org ? html`<div class="text-muted">${ev.org}${ev.asn ? ' (AS' + ev.asn + ')' : ''}</div>` : ''}
+                        </td>
+                        <td>${eventDetail(ev)}</td>
+                      </tr>
+                    `)}
+                  </tbody>
+                </table>
+              `
+            }
+          </div>
+        `;
+      }
+    }
+
+    render(html`<${App}/>`, document.getElementById('app'));
+  </script>
+</body>
+</html>

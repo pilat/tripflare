@@ -1,0 +1,164 @@
+version: "2"
+
+run:
+  timeout: 5m
+  go: '1.26'
+  modules-download-mode: readonly
+
+# This config covers what only a linter can catch — generic Go correctness,
+# security, errors, performance, formatting.
+#
+# Settings are deliberately minimal: a linter is configured ONLY where the
+# project needs a NON-default policy (verified empirically — removing the setting
+# changes the result). Defaults are left implicit instead of restated. Complexity
+# is guarded by cyclop + nestif at their defaults; funlen (raw line count) is
+# intentionally not enabled — a long but FLAT function is fine, nesting is the
+# smell. See docs/coding-style.md "Size Guidance".
+
+linters:
+  enable:
+    # Correctness
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - bodyclose        # dormant: no outbound HTTP today; guards future client code
+    - sqlclosecheck
+    - rowserrcheck
+    - nilerr
+    - nilnil
+    - forcetypeassert
+    - containedctx     # dormant: no ctx-in-struct today; guards the anti-pattern
+    - unparam
+    - wastedassign
+
+    # Errors
+    - errorlint
+    - errname
+    - wrapcheck
+
+    # Style
+    - misspell
+    - whitespace
+    - nolintlint
+    - revive
+    - unconvert
+    - predeclared
+    - usestdlibvars
+    - dupword
+    - tagliatelle
+    - wsl_v5
+    - goconst
+
+    # Quality / complexity (flatness, not line count)
+    - gocritic
+    - testifylint
+    - cyclop
+    - nestif
+    - dupl
+
+    # Security
+    - gosec
+
+    # Performance
+    - prealloc
+    - perfsprint
+    - intrange
+
+  settings:
+    govet:
+      enable-all: true   # default runs a subset; we want all analyzers
+      disable:
+        - fieldalignment  # the one we don't want: too noisy, marginal benefit
+    gosec:
+      # default low/low surfaces only a G706 log-injection false positive
+      # (structured slog + a slug already validated by requireSlugOwner).
+      severity: medium
+      confidence: medium
+    gocritic:
+      # style + performance tags enable checks beyond the default set (they caught
+      # real issues); the two below are the only ones we reject.
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - hugeParam      # fires on 80–288B value params; we accept those copies
+        - unnamedResult  # fires on multi-return constructors; naming them is cargo
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: if-return
+        - name: increment-decrement
+        - name: var-declaration
+        - name: range
+        - name: time-naming
+        - name: indent-error-flow
+        - name: empty-block
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+    tagliatelle:
+      # without this, tagliatelle's default (camel) flags all 20 snake_case tags.
+      case:
+        rules:
+          json: snake
+          yaml: snake
+    nolintlint:
+      require-explanation: true  # default false
+      require-specific: true     # default false
+
+  exclusions:
+    generated: lax  # skip files with a Code generated header
+    rules:
+      # Tests: relax conventions that don't apply to test scaffolding.
+      - path: _test\.go
+        linters:
+          - gosec
+          - goconst
+          - dupl
+          - cyclop
+          - nestif
+          - gocritic
+          - errcheck
+          - wrapcheck
+          - containedctx
+          - dupword
+          - bodyclose
+          - forcetypeassert  # test type-assertions: a bad assert fails the test anyway
+          - unparam          # unused closure params in test goroutines are fine
+      - linters: [govet]
+        path: _test\.go
+        text: "unusedwrite"
+
+      # Idiomatic Go patterns
+      - linters: [errcheck]
+        source: "defer .+\\.Close\\("
+      - linters: [govet]
+        text: 'shadow: declaration of "err" shadows'
+
+formatters:
+  enable:
+    - gofumpt
+    - gci
+    - golines
+  settings:
+    gofumpt:
+      module-path: github.com/pilat/tripflare
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/pilat/tripflare)
+    golines:
+      max-len: 120
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
