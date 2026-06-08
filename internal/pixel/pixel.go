@@ -42,7 +42,12 @@ type ogData struct {
 	Host string
 }
 
-const extGIF = ".gif"
+const (
+	extGIF = ".gif"
+
+	contentTypeGIF = "image/gif"
+	contentTypePNG = "image/png"
+)
 
 func IsPixelPath(reqPath string) bool {
 	ext := strings.ToLower(path.Ext(reqPath))
@@ -55,9 +60,9 @@ func ContentType(reqPath string) string {
 	ext := strings.ToLower(path.Ext(reqPath))
 	switch ext {
 	case extGIF:
-		return "image/gif"
+		return contentTypeGIF
 	default:
-		return "image/png"
+		return contentTypePNG
 	}
 }
 
