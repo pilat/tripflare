@@ -4,7 +4,8 @@
     "config:recommended",
     "schedule:weekly",
     "group:allNonMajor",
-    ":automergeMinor"
+    ":semanticCommitTypeAll(fix)",
+    ":semanticCommitScopeDisabled"
   ],
   "minimumReleaseAge": "24 hours",
   "postUpdateOptions": ["gomodTidy"],
