@@ -164,7 +164,7 @@ func (s *svc) handleClearEvents(w http.ResponseWriter, r *http.Request, slugID s
 
 func (s *svc) handleUI(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
-	case "/tripflare", "/tripflare/":
+	case pathUI, pathUI + "/":
 		data, err := uiFS.ReadFile("ui/index.html")
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -173,7 +173,7 @@ func (s *svc) handleUI(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(data)
-	case "/tripflare/style.css":
+	case pathUI + "/style.css":
 		data, err := uiFS.ReadFile("ui/style.css")
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)

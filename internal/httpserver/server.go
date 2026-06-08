@@ -25,6 +25,11 @@ import (
 
 const ctxUsername contextKey = "username"
 
+const (
+	pathUI       = "/tripflare"
+	pathAPISlugs = "/api/slugs"
+)
+
 type contextKey string
 
 type Service interface {
@@ -220,7 +225,7 @@ func (s *svc) handleBareDomain(w http.ResponseWriter, r *http.Request) {
 		}
 
 		s.routeAPI(w, authed)
-	case r.URL.Path == "/tripflare" || strings.HasPrefix(r.URL.Path, "/tripflare/"):
+	case r.URL.Path == pathUI || strings.HasPrefix(r.URL.Path, pathUI+"/"):
 		_, ok := s.requireAuth(w, r)
 		if !ok {
 			return
@@ -233,12 +238,12 @@ func (s *svc) handleBareDomain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *svc) routeAPI(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/api/slugs" {
+	if r.URL.Path == pathAPISlugs {
 		s.routeSlugsCollection(w, r)
 		return
 	}
 
-	const prefix = "/api/slugs/"
+	const prefix = pathAPISlugs + "/"
 	if !strings.HasPrefix(r.URL.Path, prefix) {
 		http.NotFound(w, r)
 		return
