@@ -9,3 +9,6 @@ config.yaml
 CLAUDE.local.md
 *.tmp
 /ai/tasks/
+
+# Test artifacts
+coverage.out
