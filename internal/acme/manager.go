@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-acme/lego/v4/certcrypto"
-	"github.com/go-acme/lego/v4/certificate"
-	"github.com/go-acme/lego/v4/challenge/dns01"
-	"github.com/go-acme/lego/v4/lego"
-	"github.com/go-acme/lego/v4/registration"
+	"github.com/go-acme/lego/v5/certcrypto"
+	"github.com/go-acme/lego/v5/certificate"
+	"github.com/go-acme/lego/v5/challenge/dns01"
+	"github.com/go-acme/lego/v5/lego"
+	"github.com/go-acme/lego/v5/registration"
 )
 
 const renewBeforeDays = 30
@@ -76,11 +76,15 @@ func (s *svc) Run(ctx context.Context) error {
 		return nil
 	}
 
+	dns01.SetDefaultClient(dns01.NewClient(&dns01.Options{
+		RecursiveNameservers: []string{"1.1.1.1:53", "8.8.8.8:53"},
+	}))
+
 	if err := os.MkdirAll(s.certDir(), 0o700); err != nil {
 		return fmt.Errorf("create cert dir: %w", err)
 	}
 
-	if err := s.loadOrObtain(); err != nil {
+	if err := s.loadOrObtain(ctx); err != nil {
 		slog.Error("initial cert obtainment failed, will retry", "error", err)
 	}
 
@@ -95,7 +99,7 @@ func (s *svc) Run(ctx context.Context) error {
 			if s.needsRenewal() {
 				slog.Info("certificate needs renewal, renewing")
 
-				if err := s.obtain(); err != nil {
+				if err := s.obtain(ctx); err != nil {
 					slog.Error("failed to renew certificate", "error", err)
 				}
 			}
@@ -118,24 +122,24 @@ func (s *svc) certFiles() (certFile, keyFile string) {
 		filepath.Join(dir, "key.pem")
 }
 
-func (s *svc) loadOrObtain() error {
+func (s *svc) loadOrObtain(ctx context.Context) error {
 	certFile, keyFile := s.certFiles()
 
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		slog.Info("no existing certificate, requesting new one", "cert_file", certFile, "error", err)
-		return s.obtain()
+		return s.obtain(ctx)
 	}
 
 	leaf, err := x509.ParseCertificate(cert.Certificate[0])
 	if err != nil {
 		slog.Warn("failed to parse existing certificate, requesting new one", "error", err)
-		return s.obtain()
+		return s.obtain(ctx)
 	}
 
 	if time.Until(leaf.NotAfter) <= renewBeforeDays*24*time.Hour {
 		slog.Info("existing certificate expiring soon, requesting new one", "expires", leaf.NotAfter)
-		return s.obtain()
+		return s.obtain(ctx)
 	}
 
 	cert.Leaf = leaf
@@ -156,7 +160,7 @@ func (s *svc) loadOrObtain() error {
 	return nil
 }
 
-func (s *svc) obtain() error {
+func (s *svc) obtain(ctx context.Context) error {
 	user, err := s.getOrCreateUser()
 	if err != nil {
 		return fmt.Errorf("acme user: %w", err)
@@ -167,22 +171,20 @@ func (s *svc) obtain() error {
 		return err
 	}
 
-	if err := s.registerIfNeeded(client, user); err != nil {
+	if err := s.registerIfNeeded(ctx, client, user); err != nil {
 		return err
 	}
 
-	return s.requestCertificate(client)
+	return s.requestCertificate(ctx, client)
 }
 
 func (s *svc) setupACMEClient(user *acmeUser) (*lego.Client, error) {
 	cfg := lego.NewConfig(user)
 	if s.staging {
-		cfg.CADirURL = lego.LEDirectoryStaging
+		cfg.CADirURL = lego.DirectoryURLLetsEncryptStaging
 	} else {
-		cfg.CADirURL = lego.LEDirectoryProduction
+		cfg.CADirURL = lego.DirectoryURLLetsEncrypt
 	}
-
-	cfg.Certificate.KeyType = certcrypto.RSA2048
 
 	client, err := lego.NewClient(cfg)
 	if err != nil {
@@ -190,22 +192,19 @@ func (s *svc) setupACMEClient(user *acmeUser) (*lego.Client, error) {
 	}
 
 	provider := &dnsProvider{challenge: s.challenge}
-	if err := client.Challenge.SetDNS01Provider(
-		provider,
-		dns01.AddRecursiveNameservers([]string{"1.1.1.1:53", "8.8.8.8:53"}),
-	); err != nil {
+	if err := client.Challenge.SetDNS01Provider(provider); err != nil {
 		return nil, fmt.Errorf("set dns provider: %w", err)
 	}
 
 	return client, nil
 }
 
-func (s *svc) registerIfNeeded(client *lego.Client, user *acmeUser) error {
-	if user.Registration != nil {
+func (s *svc) registerIfNeeded(ctx context.Context, client *lego.Client, user *acmeUser) error {
+	if user.registered() {
 		return nil
 	}
 
-	reg, err := client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
+	reg, err := client.Registration.Register(ctx, registration.RegisterOptions{TermsOfServiceAgreed: true})
 	if err != nil {
 		return fmt.Errorf("register: %w", err)
 	}
@@ -216,14 +215,15 @@ func (s *svc) registerIfNeeded(client *lego.Client, user *acmeUser) error {
 	return nil
 }
 
-func (s *svc) requestCertificate(client *lego.Client) error {
+func (s *svc) requestCertificate(ctx context.Context, client *lego.Client) error {
 	wildcard := "*." + s.domain
 	request := certificate.ObtainRequest{
 		Domains: []string{s.domain, wildcard},
 		Bundle:  true,
+		KeyType: certcrypto.RSA2048,
 	}
 
-	certificates, err := client.Certificate.Obtain(request)
+	certificates, err := client.Certificate.Obtain(ctx, request)
 	if err != nil {
 		return fmt.Errorf("obtain certificate for %s: %w", wildcard, err)
 	}
