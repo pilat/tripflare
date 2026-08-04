@@ -21,6 +21,7 @@ The project is open source; the deployed instance is private (bcrypt auth requir
 | `github.com/miekg/dns` | DNS server |
 | `github.com/go-acme/lego/v5` | ACME client (DNS-01 wildcard certs) |
 | `modernc.org/sqlite` | SQLite storage (pure Go, no CGO) |
+| `github.com/oschwald/maxminddb-golang/v2` | GeoIP lookups (`.mmdb` country/ASN databases) |
 
 ## Code Style
 

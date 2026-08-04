@@ -39,6 +39,59 @@ func TestNoopLookup(t *testing.T) {
 	}
 }
 
+func TestLookup(t *testing.T) {
+	svc, err := New("testdata")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer svc.Close()
+
+	tests := []struct {
+		name string
+		ip   string
+		want Info
+	}{
+		{
+			name: "country and asn",
+			ip:   "89.160.20.112",
+			want: Info{CountryCode: "SE", Flag: "\U0001F1F8\U0001F1EA", ASN: 29518, Org: "Bredband2 AB"},
+		},
+		{
+			name: "ipv4-mapped ipv6 resolves as ipv4",
+			ip:   "::ffff:89.160.20.112",
+			want: Info{CountryCode: "SE", Flag: "\U0001F1F8\U0001F1EA", ASN: 29518, Org: "Bredband2 AB"},
+		},
+		{
+			name: "asn only",
+			ip:   "1.128.0.0",
+			want: Info{ASN: 1221, Org: "Telstra Pty Ltd"},
+		},
+		{
+			name: "country only",
+			ip:   "2.125.160.216",
+			want: Info{CountryCode: "GB", Flag: "\U0001F1EC\U0001F1E7"},
+		},
+		{
+			name: "absent from both databases",
+			ip:   "127.0.0.1",
+			want: Info{},
+		},
+		{
+			name: "unparseable",
+			ip:   "not-an-ip",
+			want: Info{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := svc.Lookup(tt.ip)
+			if got != tt.want {
+				t.Errorf("Lookup(%q) = %+v, want %+v", tt.ip, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNewMissingDir(t *testing.T) {
 	svc, err := New("/nonexistent/path")
 	if err != nil {
