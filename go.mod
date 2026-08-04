@@ -6,6 +6,7 @@ require (
 	github.com/go-acme/lego/v5 v5.3.1
 	github.com/miekg/dns v1.1.72
 	github.com/oschwald/maxminddb-golang v1.13.1
+	github.com/oschwald/maxminddb-golang/v2 v2.4.1
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.54.0
 	gopkg.in/yaml.v3 v3.0.1
