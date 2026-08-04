@@ -74,9 +74,9 @@ ssh root@YOUR_SERVER_IP "ss -tulnp | grep ':53'"
 ## 4. (Optional) GeoIP databases
 
 GeoIP enrichment (country, flag, ASN, org) is **optional** — Tripflare runs fine
-without it and silently skips enrichment when the databases are absent. To enable
-it, drop MaxMind-format `.mmdb` files into the `geoip` dir. Free DB-IP Lite,
-refreshed monthly:
+without it, logging a startup warning and skipping enrichment when the databases
+are absent. To enable it, drop MaxMind-format `.mmdb` files into the `geoip` dir.
+Free DB-IP Lite, refreshed monthly:
 
 ```bash
 ssh root@YOUR_SERVER_IP bash -s <<'EOF'
