@@ -90,8 +90,11 @@ done
 EOF
 ```
 
-Files are matched by keyword (`*country*.mmdb`, `*asn*.mmdb`), so MaxMind GeoLite2
-equivalents work too. Re-run monthly (e.g. from cron) to keep them current.
+Files are matched by keyword — any `.mmdb` whose name contains `country` or `asn`,
+case-insensitively, so MaxMind GeoLite2 files work under their own names. Re-run
+monthly (e.g. from cron) to keep them current: the newest file by modification
+time wins, so last month's copy can stay in place until you prune it. Which
+databases were picked is logged at startup.
 
 ## 5. systemd service
 

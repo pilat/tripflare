@@ -139,8 +139,12 @@ Shared store for ACME DNS-01 challenge tokens. Written by the ACME provider, rea
 
 Optional IP enrichment using MaxMind-format `.mmdb` databases.
 
-- Looks for `*country*.mmdb` and `*asn*.mmdb` files in the configured directory
+- Picks the most recently modified `.mmdb` file whose name contains `country` or
+  `asn` (case-insensitive) from the configured directory
+- Symlinks are judged by their target's modification time, not the link's
 - Returns country code, flag emoji, ASN number, and organization name
+- Logs which files it opened at startup, and warns when a configured directory
+  holds none — the selection is otherwise invisible
 - Graceful noop when databases are missing — returns empty `Info`
 - Used by HTTP server to enrich events in API responses and SSE streams
 - Per-request lookup cache avoids redundant database hits

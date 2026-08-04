@@ -14,8 +14,8 @@ from JSON in [`source-data/`](https://github.com/maxmind/MaxMind-DB/tree/main/so
 and exist so that code reading `.mmdb` files can be tested.
 
 Copied verbatim from [maxmind/MaxMind-DB](https://github.com/maxmind/MaxMind-DB),
-lowercased so `findDB`'s case-sensitive `*country*.mmdb` / `*asn*.mmdb` globs
-match them:
+renamed only to keep the `country` / `asn` keyword `findDB` looks for (it matches
+case-insensitively, so the original names would work too):
 
 - `geolite2-country-test.mmdb` — `test-data/GeoLite2-Country-Test.mmdb`
 - `geolite2-asn-test.mmdb` — `test-data/GeoLite2-ASN-Test.mmdb`

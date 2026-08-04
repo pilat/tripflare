@@ -213,7 +213,7 @@ geoip/
   dbip-asn-lite.mmdb
 ```
 
-Files are matched by keyword (`*country*.mmdb`, `*asn*.mmdb`). Missing databases silently disable enrichment — everything else still works.
+Files are matched by keyword — any `.mmdb` whose name contains `country` or `asn`, case-insensitively, so MaxMind's own `GeoLite2-Country.mmdb` works unrenamed. Keep several months side by side if you like: the most recently modified file wins. Missing databases disable enrichment (logged at startup) — everything else still works.
 
 ---
 
