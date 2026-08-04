@@ -3,10 +3,10 @@ package geoip
 import (
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"path/filepath"
 
-	"github.com/oschwald/maxminddb-golang"
+	"github.com/oschwald/maxminddb-golang/v2"
 )
 
 type Info struct {
@@ -67,10 +67,13 @@ func New(dir string) (Service, error) {
 }
 
 func (s *svc) Lookup(ip string) Info {
-	parsed := net.ParseIP(ip)
-	if parsed == nil {
+	parsed, err := netip.ParseAddr(ip)
+	if err != nil {
 		return Info{}
 	}
+
+	// Unmap ::ffff:a.b.c.d — an IPv4-only database rejects it as an IPv6 lookup.
+	parsed = parsed.Unmap()
 
 	var info Info
 
@@ -79,7 +82,7 @@ func (s *svc) Lookup(ip string) Info {
 			ISOCode string `maxminddb:"iso_code"`
 		} `maxminddb:"country"`
 	}
-	if err := s.country.Lookup(parsed, &countryRecord); err == nil {
+	if err := s.country.Lookup(parsed).Decode(&countryRecord); err == nil {
 		info.CountryCode = countryRecord.Country.ISOCode
 		info.Flag = countryFlag(info.CountryCode)
 	}
@@ -88,7 +91,7 @@ func (s *svc) Lookup(ip string) Info {
 		ASN uint   `maxminddb:"autonomous_system_number"`
 		Org string `maxminddb:"autonomous_system_organization"`
 	}
-	if err := s.asn.Lookup(parsed, &asnRecord); err == nil {
+	if err := s.asn.Lookup(parsed).Decode(&asnRecord); err == nil {
 		info.ASN = asnRecord.ASN
 		info.Org = asnRecord.Org
 	}
