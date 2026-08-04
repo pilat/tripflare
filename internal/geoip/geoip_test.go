@@ -170,8 +170,9 @@ func TestFindDB(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "non-mmdb files are ignored",
-			files:   []string{"country.mmdb.gz", "notes-country.txt"},
+			name: "non-mmdb files are ignored",
+			// .part is what an interrupted download leaves behind (docs/deploy.md).
+			files:   []string{"country.mmdb.gz", "notes-country.txt", "dbip-country-lite-2026-08.mmdb.part"},
 			keyword: "country",
 			wantErr: true,
 		},
