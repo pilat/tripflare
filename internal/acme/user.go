@@ -15,18 +15,28 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/go-acme/lego/v4/registration"
+	"github.com/go-acme/lego/v5/acme"
+	"github.com/go-acme/lego/v5/registration"
 )
 
+const ecPrivateKeyPEMType = "EC PRIVATE KEY"
+
 type acmeUser struct {
-	Email        string                 `json:"email"`
-	Registration *registration.Resource `json:"registration,omitempty"`
-	key          crypto.PrivateKey
+	Email        string                `json:"email"`
+	Registration *acme.ExtendedAccount `json:"registration,omitempty"`
+	key          crypto.Signer
 }
 
-func (u *acmeUser) GetEmail() string                        { return u.Email }
-func (u *acmeUser) GetRegistration() *registration.Resource { return u.Registration }
-func (u *acmeUser) GetPrivateKey() crypto.PrivateKey        { return u.key }
+var _ registration.User = (*acmeUser)(nil)
+
+func (u *acmeUser) GetEmail() string                       { return u.Email }
+func (u *acmeUser) GetRegistration() *acme.ExtendedAccount { return u.Registration }
+func (u *acmeUser) GetPrivateKey() crypto.Signer           { return u.key }
+
+// Empty Location means an old v4-shape or partial account.json — treat as unregistered so it re-registers.
+func (u *acmeUser) registered() bool {
+	return u.Registration != nil && u.Registration.Location != ""
+}
 
 func (s *svc) getOrCreateUser() (*acmeUser, error) {
 	dir := s.certDir()
@@ -87,7 +97,7 @@ func (s *svc) createUser(keyFile string) (*acmeUser, error) {
 		return nil, fmt.Errorf("marshal key: %w", err)
 	}
 
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: ecPrivateKeyPEMType, Bytes: keyBytes})
 	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
 		return nil, fmt.Errorf("write account key: %w", err)
 	}

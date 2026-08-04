@@ -85,9 +85,7 @@ func New(dbPath string) (Service, error) {
 Required:
 
 - `var _ Interface = (*impl)(nil)` compile-time check, right after the impl type.
-- `New(...)` returns the interface, not `*svc`. (One deliberate exception:
-  `logging.NewLegoAdapter` returns a concrete type — it satisfies an external
-  library's `log.StdLogger`, not one of ours.)
+- `New(...)` returns the interface, not `*svc`.
 - The implementation struct is private.
 
 No DI framework. Dependencies are passed into `New(...)` by `cmd/tripflare/main.go`
@@ -170,7 +168,7 @@ checks inside one function.
   ```
 - **Retry loops** — a renewal/flush tick that will run again:
   ```go
-  if err := s.loadOrObtain(); err != nil {
+  if err := s.loadOrObtain(ctx); err != nil {
       slog.Error("initial cert obtainment failed, will retry", "error", err)
   }
   ```
@@ -471,7 +469,7 @@ func New() Service { ... }
 
 // GOOD: explains a non-obvious decision
 // Validate the certificate before writing it to disk to avoid boot loops.
-func (s *svc) loadOrObtain() error { ... }
+func (s *svc) loadOrObtain(ctx context.Context) error { ... }
 ```
 
 ## Anti-Patterns

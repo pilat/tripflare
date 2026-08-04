@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	legoLog "github.com/go-acme/lego/v4/log"
+	legoLog "github.com/go-acme/lego/v5/log"
 
 	"github.com/pilat/tripflare/internal/acme"
 	"github.com/pilat/tripflare/internal/config"
@@ -29,8 +29,6 @@ var (
 	commit  = "none"
 	date    = "unknown"
 )
-
-var _ legoLog.StdLogger = (*logging.LegoAdapter)(nil)
 
 const rateLimitGCMaxAge = 1 * time.Hour
 
@@ -62,7 +60,7 @@ func main() {
 
 	slog.SetDefault(slog.New(logHandler))
 
-	legoLog.Logger = logging.NewLegoAdapter()
+	legoLog.SetDefault(slog.Default())
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

@@ -165,7 +165,7 @@ Static tracking responses.
 ### Logging (`internal/logging/`)
 
 - `PrettyHandler`: colorized text handler for `log/slog`
-- `LegoAdapter`: bridges lego's `StdLogger` interface to `slog`
+- lego v5 logs through `slog` natively — `main.go` calls `legoLog.SetDefault(slog.Default())`, no adapter
 
 ## Data Flow
 
