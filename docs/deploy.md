@@ -74,24 +74,33 @@ ssh root@YOUR_SERVER_IP "ss -tulnp | grep ':53'"
 ## 4. (Optional) GeoIP databases
 
 GeoIP enrichment (country, flag, ASN, org) is **optional** — Tripflare runs fine
-without it and silently skips enrichment when the databases are absent. To enable
-it, drop MaxMind-format `.mmdb` files into the `geoip` dir. Free DB-IP Lite,
-refreshed monthly:
+without it, logging a startup warning and skipping enrichment when the databases
+are absent. To enable it, drop MaxMind-format `.mmdb` files into the `geoip` dir.
+Free DB-IP Lite, refreshed monthly:
 
 ```bash
 ssh root@YOUR_SERVER_IP bash -s <<'EOF'
+set -euo pipefail
 MONTH="$(date +%Y-%m)"
 DIR="/opt/tripflare/geoip"
 for DB in dbip-country-lite dbip-asn-lite; do
     FILE="${DB}-${MONTH}.mmdb"
-    [ -f "${DIR}/${FILE}" ] && { echo "${FILE} exists, skipping"; continue; }
-    curl -fSL "https://download.db-ip.com/free/${FILE}.gz" | gunzip > "${DIR}/${FILE}"
+    if [ -f "${DIR}/${FILE}" ]; then
+        echo "${FILE} exists, skipping"
+        continue
+    fi
+    # Land it under .part first: a failed transfer must never leave a .mmdb behind
+    curl -fSL "https://download.db-ip.com/free/${FILE}.gz" | gunzip > "${DIR}/${FILE}.part"
+    mv "${DIR}/${FILE}.part" "${DIR}/${FILE}"
 done
 EOF
 ```
 
-Files are matched by keyword (`*country*.mmdb`, `*asn*.mmdb`), so MaxMind GeoLite2
-equivalents work too. Re-run monthly (e.g. from cron) to keep them current.
+Files are matched by keyword — any `.mmdb` whose name contains `country` or `asn`,
+case-insensitively, so MaxMind GeoLite2 files work under their own names. Re-run
+monthly (e.g. from cron) to keep them current: the newest file by modification
+time wins, so last month's copy can stay in place until you prune it. Which
+databases were picked is logged at startup.
 
 ## 5. systemd service
 

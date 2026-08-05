@@ -28,8 +28,9 @@ auth:
     password_hash: "$2y$10$REPLACE_WITH_BCRYPT_HASH"
 
 # Optional: GeoIP enrichment (country, ASN, org).
-# Download DB-IP Lite (https://db-ip.com/db/lite.php) or MaxMind GeoLite2,
-# place *country*.mmdb and *asn*.mmdb files in this directory.
+# Download DB-IP Lite (https://db-ip.com/db/lite.php) or MaxMind GeoLite2 and drop
+# the files here — any .mmdb named for "country" or "asn" (any casing) is picked up,
+# newest first.
 geoip_path: "./geoip"
 
 limits:
