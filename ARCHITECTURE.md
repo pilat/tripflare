@@ -111,6 +111,7 @@ Standard `net/http` server with two listeners.
   - `DELETE /api/slugs/{slug}` — delete slug (from registry and store)
   - `GET /api/slugs/{slug}/events` — SSE event stream (replays history, then live)
   - `DELETE /api/slugs/{slug}/events` — clear events
+  - `GET /api/version` — build identity of the running binary (version, commit, commit date)
   - `GET /tripflare`, `/tripflare/style.css` — embedded web UI
 
 **Key design:**
@@ -119,6 +120,7 @@ Standard `net/http` server with two listeners.
 - Ownership enforcement: users can only access their own slugs
 - Rate limiting via token bucket (key: `IP:slug`) before recording events
 - UI is embedded via `go:embed` — no runtime filesystem reads
+- Build identity is served only by the authenticated `GET /api/version` — never on tracking subdomains, in a 401, or as a `Server`/version header (ADR-0008)
 
 ### ACME Manager (`internal/acme/`)
 
@@ -171,6 +173,16 @@ Static tracking responses.
 - `PrettyHandler`: colorized text handler for `log/slog`
 - lego v5 logs through `slog` natively — `main.go` calls `legoLog.SetDefault(slog.Default())`, no adapter
 
+### Build Info (`internal/buildinfo/`)
+
+Resolves the running binary's build identity (version, commit, commit date) with a pure function. `main` resolves it once and injects it into the HTTP server.
+
+- **Release stamp first**: when goreleaser's `-ldflags` set `main.version`, the ldflags trio is the identity, `v`-prefixed to match the git tags
+- **Go build info fallback**: otherwise `runtime/debug` build info — tag, pseudo-version or `+dirty`, plus `vcs.revision` / `vcs.time`; `dev` when there is none
+- Why ldflags win: release identity must not depend on CI checkout hygiene, since any untracked file marks build info dirty (goreleaser's `dist/` once did)
+- The date is the commit time, not the build time
+- Exposed only on authenticated routes (`GET /api/version`, read by the UI header) and by `-version`; never on the tracking surface (ADR-0008)
+
 ## Data Flow
 
 ### Tracking: `https://abc123.domain.com/img.png?ref=campaign1`
@@ -217,20 +229,21 @@ Static tracking responses.
 ## Startup Sequence
 
 ```
-1. Load config (YAML + env overrides)
-2. Open SQLite store, run migrations
-3. Create registry (in-memory)
-4. Load slugs and events from store into registry
-5. Init GeoIP (noop if databases missing)
-6. Init rate limiter
-7. Create challenge store
-8. Start DNS server (goroutine), wait for ready signal
-9. Start ACME manager (goroutine) — load or obtain cert
-10. Start HTTP server (goroutine) — port 80 + 443
-11. Start flush loop (goroutine)
-12. Block on SIGINT/SIGTERM
-13. Final flush: registry → store
-14. Shutdown: cancel context → all servers stop → close store
+1. Resolve build identity (ldflags, else Go build info); `-version` prints it and exits
+2. Load config (YAML + env overrides)
+3. Open SQLite store, run migrations
+4. Create registry (in-memory)
+5. Load slugs and events from store into registry
+6. Init GeoIP (noop if databases missing)
+7. Init rate limiter
+8. Create challenge store
+9. Start DNS server (goroutine), wait for ready signal
+10. Start ACME manager (goroutine) — load or obtain cert
+11. Start HTTP server (goroutine) — port 80 + 443
+12. Start flush loop (goroutine)
+13. Block on SIGINT/SIGTERM
+14. Final flush: registry → store
+15. Shutdown: cancel context → all servers stop → close store
 ```
 
 ## Infrastructure Requirements
@@ -260,6 +273,9 @@ change, verify each of these and update the doc if it drifted:
   / `RecordHTTP` marshal in `internal/registry/`.
 - **HTTP routes** — the route list under *HTTP Server* must match the routing
   switch in `internal/httpserver/server.go` and `handlers.go`.
+- **Build identity exposure** — in non-test `internal/httpserver/*.go`, `s.build`
+  must be read only by `handleVersion`, reached via `routeAPI` behind `requireAuth`
+  (ADR-0008).
 - **Config & limits** — fields named here must match `internal/config/config.go`
   and `config.yaml.example`.
 - **Startup sequence** — the numbered boot steps must track the actual wiring and

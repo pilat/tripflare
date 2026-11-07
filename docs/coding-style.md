@@ -19,8 +19,8 @@ Packages come in two kinds:
 - **Service packages** — `store`, `registry`, `dns`, `httpserver`, `acme`,
   `geoip`, `ratelimit`. Stateful; they export an interface + a private
   implementation.
-- **Plain packages** — `config`, `pixel`, `logging`. Data structs and pure
-  functions. No interface — don't invent one just to have one.
+- **Plain packages** — `config`, `pixel`, `logging`, `buildinfo`. Data structs
+  and pure functions. No interface — don't invent one just to have one.
 
 ## Dependency Direction (architecture-level)
 
@@ -29,11 +29,11 @@ Imports point one way: toward leaves. The graph is acyclic and stays that way.
 ```text
 cmd/tripflare (composition root) ──► imports everything
 
-httpserver ──► config, geoip, pixel, ratelimit, registry, store
+httpserver ──► buildinfo, config, geoip, pixel, ratelimit, registry, store
 dns        ──► registry, acme
 registry   ──► store
 store      ──► (none — pure leaf)
-config, acme, geoip, ratelimit, pixel, logging ──► (none — leaves)
+config, acme, geoip, ratelimit, pixel, logging, buildinfo ──► (none — leaves)
 ```
 
 Invariants — a change that breaks one of these is an architectural change, not a

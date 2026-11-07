@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/pilat/tripflare/internal/buildinfo"
 	"github.com/pilat/tripflare/internal/config"
 	"github.com/pilat/tripflare/internal/geoip"
 	"github.com/pilat/tripflare/internal/pixel"
@@ -26,8 +27,9 @@ import (
 const ctxUsername contextKey = "username"
 
 const (
-	pathUI       = "/tripflare"
-	pathAPISlugs = "/api/slugs"
+	pathUI         = "/tripflare"
+	pathAPISlugs   = "/api/slugs"
+	pathAPIVersion = "/api/version"
 )
 
 type contextKey string
@@ -46,6 +48,7 @@ type svc struct {
 	accessLimit    ratelimit.Limiter
 	auth           []config.AuthEntry
 	geo            geoip.Service
+	build          buildinfo.Info
 }
 
 var _ Service = (*svc)(nil)
@@ -61,6 +64,7 @@ func New(
 	accessLimit ratelimit.Limiter,
 	auth []config.AuthEntry,
 	geo geoip.Service,
+	build buildinfo.Info,
 ) Service {
 	return &svc{
 		domain:         domain,
@@ -72,6 +76,7 @@ func New(
 		accessLimit:    accessLimit,
 		auth:           auth,
 		geo:            geo,
+		build:          build,
 	}
 }
 
@@ -238,6 +243,17 @@ func (s *svc) handleBareDomain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *svc) routeAPI(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == pathAPIVersion {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+
+		s.handleVersion(w)
+
+		return
+	}
+
 	if r.URL.Path == pathAPISlugs {
 		s.routeSlugsCollection(w, r)
 		return

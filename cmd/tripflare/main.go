@@ -7,12 +7,15 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
+	"strings"
 	"syscall"
 	"time"
 
 	legoLog "github.com/go-acme/lego/v5/log"
 
 	"github.com/pilat/tripflare/internal/acme"
+	"github.com/pilat/tripflare/internal/buildinfo"
 	"github.com/pilat/tripflare/internal/config"
 	"github.com/pilat/tripflare/internal/dns"
 	"github.com/pilat/tripflare/internal/geoip"
@@ -38,8 +41,15 @@ func main() {
 
 	flag.Parse()
 
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		bi = nil
+	}
+
+	build := buildinfo.Resolve(version, commit, date, bi)
+
 	if *showVersion {
-		fmt.Printf("tripflare %s (commit %s, built %s)\n", version, commit, date)
+		fmt.Println(versionLine(build))
 		return
 	}
 
@@ -65,14 +75,14 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if err := run(ctx, cfg, cancel); err != nil {
+	if err := run(ctx, cfg, cancel, build); err != nil {
 		slog.Error("fatal", "error", err)
 		cancel()
 		os.Exit(1) //nolint:gocritic // intentional exit after fatal error
 	}
 }
 
-func run(ctx context.Context, cfg *config.Config, cancel context.CancelFunc) error {
+func run(ctx context.Context, cfg *config.Config, cancel context.CancelFunc, build buildinfo.Info) error {
 	slog.Info("config loaded", "domain", cfg.Domain, "external_ip", cfg.ExternalIP)
 
 	eventStore, reg, geo, accessLimit, err := initServices(ctx, cfg)
@@ -82,7 +92,7 @@ func run(ctx context.Context, cfg *config.Config, cancel context.CancelFunc) err
 	defer eventStore.Close()
 	defer geo.Close()
 
-	if err := startServers(ctx, cfg, reg, eventStore, accessLimit, geo, cancel); err != nil {
+	if err := startServers(ctx, cfg, reg, eventStore, accessLimit, geo, cancel, build); err != nil {
 		return err
 	}
 
@@ -143,6 +153,7 @@ func startServers(
 	accessLimit ratelimit.Limiter,
 	geo geoip.Service,
 	cancel context.CancelFunc,
+	build buildinfo.Info,
 ) error {
 	challengeStore := acme.NewChallengeStore()
 
@@ -192,6 +203,7 @@ func startServers(
 		accessLimit,
 		cfg.Auth,
 		geo,
+		build,
 	)
 
 	go func() {
@@ -209,6 +221,24 @@ func startServers(
 	)
 
 	return nil
+}
+
+func versionLine(build buildinfo.Info) string {
+	var details []string
+
+	if build.Commit != "" {
+		details = append(details, "commit "+build.Commit)
+	}
+
+	if build.Date != "" {
+		details = append(details, "committed "+build.Date)
+	}
+
+	if len(details) == 0 {
+		return "tripflare " + build.Version
+	}
+
+	return "tripflare " + build.Version + " (" + strings.Join(details, ", ") + ")"
 }
 
 func flushLoop(

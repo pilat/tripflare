@@ -62,3 +62,4 @@ already in this folder were captured retroactively from the design notes in
 | [0005](0005-basic-auth-with-owner-scoped-slugs.md) | Basic Auth with owner-scoped slugs | accepted |
 | [0006](0006-embedded-zero-build-web-ui.md) | Embedded zero-build web UI | accepted |
 | [0007](0007-geoip-enrichment-at-response-time.md) | GeoIP enrichment at response time | accepted |
+| [0008](0008-operator-only-build-identity.md) | Operator-only build identity, release stamp first | accepted |
