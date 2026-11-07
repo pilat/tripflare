@@ -1,6 +1,6 @@
 module github.com/pilat/tripflare
 
-go 1.26.1
+go 1.27.3
 
 require (
 	github.com/go-acme/lego/v5 v5.5.2
