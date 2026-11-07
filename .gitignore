@@ -2,6 +2,8 @@
 /tripflare.db
 /certs/
 /geoip/
+/dist/
+/bin/
 deploy.sh
 config.yaml
 
@@ -12,3 +14,4 @@ CLAUDE.local.md
 
 # Test artifacts
 coverage.out
+/coverage.html

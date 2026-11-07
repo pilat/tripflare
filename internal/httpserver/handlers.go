@@ -34,12 +34,26 @@ type enrichedEvent struct {
 	Org         string `json:"org,omitempty"`
 }
 
+type versionResponse struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit,omitempty"`
+	Date    string `json:"date,omitempty"`
+}
+
 type errorResponse struct {
 	Error string `json:"error"`
 }
 
 func (s *svc) handleRoot(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
+}
+
+func (s *svc) handleVersion(w http.ResponseWriter) {
+	writeJSON(w, http.StatusOK, versionResponse{
+		Version: s.build.Version,
+		Commit:  s.build.Commit,
+		Date:    s.build.Date,
+	})
 }
 
 func (s *svc) handleCreateSlug(w http.ResponseWriter, r *http.Request) {

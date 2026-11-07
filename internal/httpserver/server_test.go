@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,8 +11,16 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/pilat/tripflare/internal/buildinfo"
 	"github.com/pilat/tripflare/internal/config"
 )
+
+// Distinctive values so a "does not contain" assertion can't pass by accident.
+var leakCheckBuild = buildinfo.Info{
+	Version: "v9.8.7-leakcheck",
+	Commit:  "deadbeefcafebabe0123456789abcdeffedcba98",
+	Date:    "2026-11-07T21:44:34Z",
+}
 
 func TestExtractSlug(t *testing.T) {
 	s := &svc{domain: "trap.example.com"}
@@ -551,5 +560,194 @@ func TestTripflareDoesNotRequireAuth(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
+	}
+}
+
+func TestVersionAPI(t *testing.T) {
+	tests := []struct {
+		name  string
+		build buildinfo.Info
+		want  map[string]string
+	}{
+		{
+			name:  "full identity",
+			build: leakCheckBuild,
+			want: map[string]string{
+				"version": leakCheckBuild.Version,
+				"commit":  leakCheckBuild.Commit,
+				"date":    leakCheckBuild.Date,
+			},
+		},
+		{
+			name:  "commit and date omitted when empty",
+			build: buildinfo.Info{Version: "dev"},
+			want:  map[string]string{"version": "dev"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newTestServer(t)
+			s.build = tt.build
+
+			req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
+			req.Host = "trap.example.com"
+			req.SetBasicAuth(testUsername, testPassword)
+
+			w := httptest.NewRecorder()
+			s.mainHandler().ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+			}
+
+			if ct := w.Header().Get("Content-Type"); ct != "application/json; charset=utf-8" {
+				t.Errorf("content-type = %q", ct)
+			}
+
+			var body map[string]string
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+
+			if !maps.Equal(body, tt.want) {
+				t.Errorf("body = %v, want %v", body, tt.want)
+			}
+		})
+	}
+}
+
+func TestVersionAPIMethodNotAllowed(t *testing.T) {
+	s := newTestServer(t)
+	s.build = leakCheckBuild
+
+	req := httptest.NewRequest(http.MethodPost, "/api/version", nil)
+	req.Host = "trap.example.com"
+	req.SetBasicAuth(testUsername, testPassword)
+
+	w := httptest.NewRecorder()
+	s.mainHandler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", w.Code)
+	}
+}
+
+func TestVersionAPIUnauthenticatedLeaksNothing(t *testing.T) {
+	s := newTestServer(t)
+	s.build = leakCheckBuild
+
+	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
+	req.Host = "trap.example.com"
+
+	w := httptest.NewRecorder()
+	s.mainHandler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", w.Code)
+	}
+
+	if w.Header().Get("WWW-Authenticate") == "" {
+		t.Error("missing WWW-Authenticate")
+	}
+
+	assertNoBuildIdentity(t, w)
+}
+
+func TestBareDomainNotFoundLeaksNothing(t *testing.T) {
+	s := newTestServer(t)
+	s.build = leakCheckBuild
+
+	tests := []struct {
+		name    string
+		handler http.Handler
+		path    string
+	}{
+		{":443 root", s.mainHandler(), "/"},
+		{":80 api version", s.redirectHandler(), "/api/version"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req.Host = "trap.example.com"
+			req.SetBasicAuth(testUsername, testPassword)
+
+			w := httptest.NewRecorder()
+			tt.handler.ServeHTTP(w, req)
+
+			if w.Code != http.StatusNotFound {
+				t.Errorf("status = %d, want 404", w.Code)
+			}
+
+			assertNoBuildIdentity(t, w)
+		})
+	}
+}
+
+func TestVersionPathOnSlugSubdomainLeaksNothing(t *testing.T) {
+	s := newTestServer(t)
+	s.build = leakCheckBuild
+
+	tok, err := s.registry.CreateSlug(testUsername)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	handlers := []struct {
+		name    string
+		handler http.Handler
+	}{
+		{":443", s.mainHandler()},
+		{":80", s.redirectHandler()},
+	}
+	slugs := []struct {
+		name string
+		slug string
+	}{
+		{"existing slug", tok.ID},
+		{"unknown slug", "nosuchslug"},
+	}
+
+	for _, h := range handlers {
+		for _, sl := range slugs {
+			t.Run(h.name+" "+sl.name, func(t *testing.T) {
+				req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
+				req.Host = sl.slug + ".trap.example.com"
+				req.RemoteAddr = "5.5.5.5:9999"
+				req.SetBasicAuth(testUsername, testPassword)
+
+				w := httptest.NewRecorder()
+				h.handler.ServeHTTP(w, req)
+
+				if w.Code != http.StatusOK {
+					t.Errorf("status = %d, want 200", w.Code)
+				}
+
+				if !strings.Contains(w.Body.String(), "og:title") {
+					t.Errorf("not served by the tracking handler, body: %s", w.Body.String())
+				}
+
+				assertNoBuildIdentity(t, w)
+			})
+		}
+	}
+}
+
+func assertNoBuildIdentity(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+
+	for _, needle := range []string{leakCheckBuild.Version, leakCheckBuild.Commit[:7], leakCheckBuild.Date} {
+		if strings.Contains(w.Body.String(), needle) {
+			t.Errorf("body contains %q", needle)
+		}
+
+		for name, values := range w.Header() {
+			for _, v := range values {
+				if strings.Contains(v, needle) {
+					t.Errorf("header %s contains %q", name, needle)
+				}
+			}
+		}
 	}
 }

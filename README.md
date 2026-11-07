@@ -96,6 +96,7 @@ For the full component breakdown, schema, and lifecycle, see [`ARCHITECTURE.md`]
 | `DELETE` | `/api/slugs/{slug}` | Delete a tracker and its events |
 | `GET` | `/api/slugs/{slug}/events` | Server-Sent Events stream — history replay, then live |
 | `DELETE` | `/api/slugs/{slug}/events` | Clear a tracker's events |
+| `GET` | `/api/version` | Build identity of the running binary: version, commit, commit date |
 | `GET` | `/tripflare` | Embedded web UI |
 
 The whole thing is curl-friendly:

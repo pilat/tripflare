@@ -59,6 +59,15 @@
       }
     }
 
+    function buildLine(build) {
+      if (!build) return null;
+      const title = [
+        build.commit && 'commit ' + build.commit,
+        build.date && 'committed ' + build.date,
+      ].filter(Boolean).join('\n');
+      return html`<span class="build" title=${title || undefined}>${build.version}</span>`;
+    }
+
     function copyToClipboard(text, btn) {
       navigator.clipboard.writeText(text).then(() => {
         const orig = btn.textContent;
@@ -82,6 +91,7 @@
           newestFirst: true,
           slugList: [],
           loadingList: false,
+          build: null,
         };
         this.eventSource = null;
         this.expiryTimer = null;
@@ -89,6 +99,8 @@
       }
 
       componentDidMount() {
+        this.fetchBuild();
+
         window.addEventListener('hashchange', () => {
           const slug = (location.hash || '').replace(/^#\/?/, '');
           if (slug && slug !== this.state.slug) {
@@ -135,6 +147,14 @@
         } catch (err) {
           this.setState({ error: err.message, loadingList: false });
         }
+      }
+
+      async fetchBuild() {
+        try {
+          const res = await fetch('/api/version');
+          if (!res.ok) return;
+          this.setState({ build: await res.json() });
+        } catch (_) {}
       }
 
       startListTimer() {
@@ -260,14 +280,17 @@
       }
 
       render() {
-        const { slug, domain, expiresAt, events, status, error, creating, newestFirst } = this.state;
+        const { slug, domain, expiresAt, events, status, error, creating, newestFirst, build } = this.state;
         const sortedEvents = newestFirst ? [...events].reverse() : events;
 
         if (!slug) {
           const { slugList, loadingList } = this.state;
           return html`
             <header>
-              <h1>Tripflare</h1>
+              <div class="header-row">
+                <h1>Tripflare</h1>
+                ${buildLine(build)}
+              </div>
               <p>DNS + HTTPS tracking for security research</p>
             </header>
             <div class="dashboard">
@@ -313,7 +336,10 @@
 
         return html`
           <header>
-            <h1>Tripflare</h1>
+            <div class="header-row">
+              <h1>Tripflare</h1>
+              ${buildLine(build)}
+            </div>
             <p><a href="#" style="color: var(--text-muted); text-decoration: none;"
               onClick=${(e) => { e.preventDefault(); location.hash = ''; }}>${'← back'}</a></p>
           </header>
